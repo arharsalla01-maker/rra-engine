@@ -1,3 +1,7 @@
-discord.py
-python-dotenv
-flask
+ID=rraengine
+NAME=RRA Engine
+TYPE=bot
+MAIN=main.py
+RAM=100
+AUTORESTART=true
+VERSION=latest
