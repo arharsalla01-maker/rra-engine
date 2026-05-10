@@ -1,131 +1,81 @@
-import discord
+ import discord
 from discord.ext import commands
-from discord import app_commands
+from discord import ui
 
-# --- MODAL PARA RECOGER DATOS ---
-class TicketModal(discord.ui.Modal):
-    def __init__(self, categoria, titulos_inputs):
-        super().__init__(title=f"Soporte: {categoria}")
-        self.categoria = categoria
+class TicketModal(ui.Modal):
+    def __init__(self, categoria, preguntas):
+        super().__init__(title=f"RRA • {categoria}")
+        self.preguntas = preguntas
         self.inputs = []
-        
-        for label in titulos_inputs:
-            text_input = discord.ui.TextInput(
-                label=label,
-                style=discord.TextStyle.paragraph if len(titulos_inputs) == 1 else discord.TextStyle.short,
-                required=True
-            )
-            self.add_item(text_input)
-            self.inputs.append(text_input)
+        for p in preguntas:
+            i = ui.TextInput(label=p, style=discord.TextStyle.paragraph, required=True)
+            self.add_item(i)
+            self.inputs.append(i)
 
     async def on_submit(self, interaction: discord.Interaction):
         guild = interaction.guild
         user = interaction.user
         
-        # Crear el canal del ticket
-        nombre_canal = f"ticket-{user.name}".lower()
-        # Aquí definimos que el canal sea privado (solo staff y usuario al inicio, pero bloqueado)
-        overwrites = {
-            guild.default_role: discord.PermissionOverwrite(view_channel=False),
-            user: discord.PermissionOverwrite(view_channel=True, send_messages=False), # No puede escribir aún
-            guild.me: discord.PermissionOverwrite(view_channel=True, send_messages=True)
-        }
-        
-        channel = await guild.create_text_channel(name=nombre_canal, overwrites=overwrites)
-        
-        await interaction.response.send_message(f"✅ Tu ticket ha sido creado en {channel.mention}", ephemeral=True)
-
-        # Embed de Bienvenida dentro del Ticket
-        embed = discord.Embed(
-            title="👋 ¡Hola! Bienvenido a tu ticket",
-            description=(
-                "Gracias por contactar con **ROLEPLAY RRA**.\n\n"
-                "Nuestro equipo ha sido notificado. Por favor, mantén la paciencia.\n"
-                "━━━━━━━━━━━━━━━\n"
-                "**Información proporcionada:**\n" + 
-                "\n".join([f"**{i.label}:** {i.value}" for i in self.inputs])
-            ),
-            color=discord.Color.blue()
+        # Crear canal privado
+        channel = await guild.create_text_channel(
+            name=f"🎫-{user.name}",
+            overwrites={
+                guild.default_role: discord.PermissionOverwrite(view_channel=False),
+                user: discord.PermissionOverwrite(view_channel=True, send_messages=False),
+                guild.me: discord.PermissionOverwrite(view_channel=True, send_messages=True)
+            }
         )
-        embed.set_footer(text="RRA Engine • Esperando que un staff reclame...")
+        
+        embed = discord.Embed(title="🎫 RRA ENGINE • NUEVO TICKET", color=discord.Color.blue())
+        for i in self.inputs:
+            embed.add_field(name=i.label, value=i.value, inline=False)
+        
+        await channel.send(content=f"🔒 **Esperando que el STAFF reclame...**\n{user.mention}", embed=embed, view=TicketActions())
+        await interaction.response.send_message(f"✅ Ticket creado en {channel.mention}", ephemeral=True)
 
-        # Botones de gestión
-        view = TicketControlView()
-        await channel.send(content=f"🔒 **Esperando que un miembro del STAFF reclame este ticket…**\n{user.mention}", embed=embed, view=view)
-
-# --- BOTONES DENTRO DEL TICKET ---
-class TicketControlView(discord.ui.View):
+class TicketActions(ui.View):
     def __init__(self):
         super().__init__(timeout=None)
 
-    @discord.ui.button(label="👋 Reclamar Ticket", style=discord.ButtonStyle.gray, custom_id="claim_ticket")
-    async def claim(self, interaction: discord.Interaction, button: discord.ui.Button):
-        # Lógica de reclamar: desbloquear chat para el usuario y el staff que reclama
-        # (Aquí podrías añadir roles de staff específicos)
-        await interaction.channel.set_permissions(interaction.user, view_channel=True, send_messages=True)
-        # Desbloquear al usuario creador (buscándolo por el nombre del canal o mención)
-        # Por ahora, simplemente activamos el canal:
-        await interaction.channel.set_permissions(interaction.guild.default_role, send_messages=False)
-        
+    @ui.button(label="👋 Reclamar", style=discord.ButtonStyle.gray, custom_id="claim")
+    async def claim(self, interaction: discord.Interaction, button: ui.Button):
+        await interaction.channel.set_permissions(interaction.user, send_messages=True)
         button.disabled = True
-        button.label = f"Reclamado por {interaction.user.name}"
+        button.label = f"Atendido por {interaction.user.name}"
         await interaction.response.edit_message(view=self)
-        await interaction.followup.send(f"✅ El staff {interaction.user.mention} ha reclamado este ticket y ahora puede ayudarte.")
+        await interaction.followup.send(f"✅ {interaction.user.mention} ha tomado tu caso.")
 
-    @discord.ui.button(label="✖ Cerrar Solicitud", style=discord.ButtonStyle.primary, custom_id="close_ticket")
-    async def close(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.response.send_message("Cerrando ticket en 5 segundos...")
-        await interaction.channel.delete() # Simple por ahora, luego añadimos valoración
+    @ui.button(label="✖ Cerrar", style=discord.ButtonStyle.danger, custom_id="close")
+    async def close(self, interaction: discord.Interaction, button: ui.Button):
+        # Aquí se enviaría la transcripción al canal de logs (ID ajustable)
+        await interaction.response.send_message("Cerrando ticket...")
+        await interaction.channel.delete()
 
-# --- MENÚ DESPLEGABLE PRINCIPAL ---
-class SoporteDropdown(discord.ui.Select):
+class Tickets(commands.Cog):
+    def __init__(self, bot): self.bot = bot
+
+    @commands.command()
+    async def soporte(self, ctx):
+        embed = discord.Embed(title="🎫 RRA ENGINE • CENTRO DE SOPORTE", description="Selecciona una categoría para continuar.", color=discord.Color.blue())
+        view = ui.View().add_item(SupportDropdown())
+        await ctx.send(embed=embed, view=view)
+
+class SupportDropdown(ui.Select):
     def __init__(self):
         options = [
-            discord.SelectOption(label="Soporte General", emoji="🎫", description="Dudas generales"),
-            discord.SelectOption(label="Compras", emoji="💳", description="Problemas con la tienda"),
-            discord.SelectOption(label="Bugs o Problemas", emoji="🐞", description="Reportar errores"),
-            discord.SelectOption(label="Apelar Sanción", emoji="⚖️", description="Revisiones de ban/kick")
+            discord.SelectOption(label="Soporte General", emoji="🎫"),
+            discord.SelectOption(label="Compras", emoji="💳"),
+            discord.SelectOption(label="Bugs", emoji="🐞"),
+            discord.SelectOption(label="Apelar Sanción", emoji="⚖️")
         ]
-        super().__init__(placeholder="📂 Despliega el menú y elige una categoría", options=options)
+        super().__init__(placeholder="📂 Selecciona categoría...", options=options)
 
     async def callback(self, interaction: discord.Interaction):
-        if self.values[0] == "Soporte General":
-            await interaction.response.send_modal(TicketModal("Soporte General", ["¿Cuál es tu problema?"]))
-        elif self.values[0] == "Compras":
-            await interaction.response.send_modal(TicketModal("Compras", ["Nick del juego", "ID Transacción", "Correo", "Detalles"]))
-        elif self.values[0] == "Bugs o Problemas":
-            await interaction.response.send_modal(TicketModal("Bugs", ["Descripción del error"]))
+        if self.values[0] == "Compras":
+            await interaction.response.send_modal(TicketModal("Compras", ["Nick", "ID Transacción (TBX-ID)", "Detalles"]))
         elif self.values[0] == "Apelar Sanción":
-            await interaction.response.send_modal(TicketModal("Apelaciones", ["¿Qué hiciste?", "¿Quién te sancionó?", "Motivo de retiro"]))
+            await interaction.response.send_modal(TicketModal("Apelación", ["¿Qué pasó?", "Staff que sancionó", "¿Por qué retirarla?"]))
+        else:
+            await interaction.response.send_modal(TicketModal(self.values[0], ["Describe tu problema detalladamente"]))
 
-class SoporteView(discord.ui.View):
-    def __init__(self):
-        super().__init__(timeout=None)
-        self.add_item(SoporteDropdown())
-
-# --- COMANDO PRINCIPAL ---
-class Tickets(commands.Cog):
-    def __init__(self, bot):
-        self.bot = bot
-
-    @commands.command(name="soporte")
-    async def soporte(self, ctx):
-        embed = discord.Embed(
-            title="🎫 RRA ENGINE • CENTRO DE SOPORTE",
-            description=(
-                "Bienvenido al sistema oficial de soporte de **ROLEPLAY RRA**.\n\n"
-                "• No hagas menciones innecesarias al STAFF\n"
-                "• Mantén el respeto en todo momento\n"
-                "• Explica tu problema claramente\n\n"
-                "Selecciona una categoría en el menú desplegable para continuar."
-            ),
-            color=discord.Color.blue()
-        )
-        embed.set_footer(text="ESTE MENÚ ESTÁ EN FASE DE PRUEBA.")
-        if ctx.guild.icon:
-            embed.set_thumbnail(url=ctx.guild.icon.url)
-            
-        await ctx.send(embed=embed, view=SoporteView())
-
-async def setup(bot):
-    await bot.add_cog(Tickets(bot))
+async def setup(bot): await bot.add_cog(Tickets(bot))
