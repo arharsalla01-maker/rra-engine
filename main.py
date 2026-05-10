@@ -1,35 +1,35 @@
-# El corazón del bot
 import discord
 from discord.ext import commands
 import os
 from dotenv import load_dotenv
 
+# Cargamos variables de entorno (.env)
 load_dotenv()
 
-# Bot setup
-intents = discord.Intents.default()
-intents.message_content = True
-intents.members = True
+class RRAEngine(commands.Bot):
+    def __init__(self):
+        # Configuramos intenciones (necesario para ver miembros y mensajes)
+        intents = discord.Intents.all()
+        super().__init__(command_prefix="!", intents=intents, help_command=None)
 
-bot = commands.Bot(command_prefix='!', intents=intents)
+    async def setup_hook(self):
+        # Carga automática de todos los módulos en la carpeta /cogs
+        for filename in os.listdir('./cogs'):
+            if filename.endswith('.py'):
+                await self.load_extension(f'cogs.{filename[:-3]}')
+                print(f'✅ Módulo cargado: {filename}')
 
-@bot.event
-async def on_ready():
-    print(f'{bot.user} ha iniciado sesión en Discord')
-    await bot.change_presence(activity=discord.Game(name='RRA-Engine'))
+    async def on_ready(self):
+        print(f'━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━')
+        print(f'🤖 RRA ENGINE ONLINE')
+        print(f'👤 Sesión iniciada como: {self.user.name}')
+        print(f'🆔 ID: {self.user.id}')
+        print(f'━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━')
+        
+        # Estado del bot
+        await self.change_presence(activity=discord.Game(name="ROLEPLAY RRA | !soporte"))
 
-# Cargar cogs
-async def load_cogs():
-    for filename in os.listdir('./cogs'):
-        if filename.endswith('.py'):
-            await bot.load_extension(f'cogs.{filename[:-3]}')
-            print(f'Cog cargado: {filename}')
+bot = RRAEngine()
 
-async def main():
-    async with bot:
-        await load_cogs()
-        await bot.start(os.getenv('DISCORD_TOKEN'))
-
-if __name__ == '__main__':
-    import asyncio
-    asyncio.run(main())
+if __name__ == "__main__":
+    bot.run(os.getenv('TOKEN'))
